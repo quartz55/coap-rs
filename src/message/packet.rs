@@ -179,8 +179,8 @@ impl Packet {
 
     /// Decodes a byte slice and construct the equivalent Packet.
     pub fn from_bytes(buf: &[u8]) -> Result<Packet, ParseError> {
-        
-        let header_result: bincode::Result<header::HeaderRaw> = bincode::config().big_endian().deserialize(buf);
+        let header_result: bincode::Result<header::HeaderRaw> =
+            bincode::config().big_endian().deserialize(buf);
         match header_result {
             Ok(raw_header) => {
                 let header = header::Header::from_raw(&raw_header);
@@ -226,8 +226,8 @@ impl Packet {
                                 return Err(ParseError::InvalidOptionLength);
                             }
 
-                            delta = (u16::from_be(u8_to_unsigned_be!(buf, idx, idx + 1, u16)) +
-                                     269) as usize;
+                            delta = (u16::from_be(u8_to_unsigned_be!(buf, idx, idx + 1, u16)) + 269)
+                                as usize;
                             idx += 2;
                         }
                         15 => {
@@ -251,8 +251,8 @@ impl Packet {
                                 return Err(ParseError::InvalidOptionLength);
                             }
 
-                            length = (u16::from_be(u8_to_unsigned_be!(buf, idx, idx + 1, u16)) +
-                                      269) as usize;
+                            length = (u16::from_be(u8_to_unsigned_be!(buf, idx, idx + 1, u16))
+                                + 269) as usize;
                             idx += 2;
                         }
                         15 => {
@@ -285,7 +285,6 @@ impl Packet {
                 if idx < buf.len() {
                     payload = buf[(idx + 1)..buf.len()].to_vec();
                 }
-
 
                 Ok(Packet {
                     header: header,
@@ -346,12 +345,18 @@ impl Packet {
                 unsafe {
                     use std::ptr;
                     let buf_len = options_bytes.len();
-                    ptr::copy(header.as_ptr(),
-                              options_bytes.as_mut_ptr().offset(buf_len as isize),
-                              header.len());
-                    ptr::copy(value.as_ptr(),
-                              options_bytes.as_mut_ptr().offset((buf_len + header.len()) as isize),
-                              value.len());
+                    ptr::copy(
+                        header.as_ptr(),
+                        options_bytes.as_mut_ptr().offset(buf_len as isize),
+                        header.len(),
+                    );
+                    ptr::copy(
+                        value.as_ptr(),
+                        options_bytes
+                            .as_mut_ptr()
+                            .offset((buf_len + header.len()) as isize),
+                        value.len(),
+                    );
                     options_bytes.set_len(buf_len + header.len() + value.len());
                 }
             }
@@ -368,9 +373,9 @@ impl Packet {
         }
 
         let mut buf: Vec<u8> = Vec::with_capacity(buf_length);
-        let header_result: bincode::Result<()> =
-            bincode::config().big_endian().serialize_into(&mut buf, &self.header.to_raw());
-
+        let header_result: bincode::Result<()> = bincode::config()
+            .big_endian()
+            .serialize_into(&mut buf, &self.header.to_raw());
 
         match header_result {
             Ok(_) => {
@@ -378,12 +383,17 @@ impl Packet {
                 unsafe {
                     use std::ptr;
                     let buf_len = buf.len();
-                    ptr::copy(self.token.as_ptr(),
-                              buf.as_mut_ptr().offset(buf_len as isize),
-                              self.token.len());
-                    ptr::copy(options_bytes.as_ptr(),
-                              buf.as_mut_ptr().offset((buf_len + self.token.len()) as isize),
-                              options_bytes.len());
+                    ptr::copy(
+                        self.token.as_ptr(),
+                        buf.as_mut_ptr().offset(buf_len as isize),
+                        self.token.len(),
+                    );
+                    ptr::copy(
+                        options_bytes.as_ptr(),
+                        buf.as_mut_ptr()
+                            .offset((buf_len + self.token.len()) as isize),
+                        options_bytes.len(),
+                    );
                     buf.set_len(buf_len + self.token.len() + options_bytes.len());
                 }
 
@@ -393,9 +403,11 @@ impl Packet {
                     unsafe {
                         use std::ptr;
                         let buf_len = buf.len();
-                        ptr::copy(self.payload.as_ptr(),
-                                  buf.as_mut_ptr().offset(buf.len() as isize),
-                                  self.payload.len());
+                        ptr::copy(
+                            self.payload.as_ptr(),
+                            buf.as_mut_ptr().offset(buf.len() as isize),
+                            self.payload.len(),
+                        );
                         buf.set_len(buf_len + self.payload.len());
                     }
                 }
@@ -426,30 +438,34 @@ impl Packet {
             CoAPOption::ProxyScheme => 39,
             CoAPOption::Size1 => 60,
             CoAPOption::Size2 => 28,
-            CoAPOption::NoResponse => 258
+            CoAPOption::NoResponse => 258,
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use super::super::header;
-    use std::collections::LinkedList;
+    use super::*;
     use log::*;
+    use std::collections::LinkedList;
 
     #[test]
     fn test_decode_packet_with_options() {
-        let buf = [0x44, 0x01, 0x84, 0x9e, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04, 0x54,
-                   0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31];
+        let buf = [
+            0x44, 0x01, 0x84, 0x9e, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04, 0x54, 0x65,
+            0x73, 0x74, 0x43, 0x61, 0x3d, 0x31,
+        ];
         let packet = Packet::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert_eq!(packet.header.get_version(), 1);
         assert_eq!(packet.header.get_type(), header::MessageType::Confirmable);
         assert_eq!(packet.header.get_token_length(), 4);
-        assert_eq!(packet.header.code,
-                   header::MessageClass::Request(header::RequestType::Get));
+        assert_eq!(
+            packet.header.code,
+            header::MessageClass::Request(header::RequestType::Get)
+        );
         assert_eq!(packet.header.get_message_id(), 33950);
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
         assert_eq!(packet.options.len(), 2);
@@ -472,17 +488,22 @@ mod test {
 
     #[test]
     fn test_decode_packet_with_payload() {
-        let buf = [0x64, 0x45, 0x13, 0xFD, 0xD0, 0xE2, 0x4D, 0xAC, 0xFF, 0x48, 0x65, 0x6C, 0x6C,
-                   0x6F];
+        let buf = [
+            0x64, 0x45, 0x13, 0xFD, 0xD0, 0xE2, 0x4D, 0xAC, 0xFF, 0x48, 0x65, 0x6C, 0x6C, 0x6F,
+        ];
         let packet = Packet::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert_eq!(packet.header.get_version(), 1);
-        assert_eq!(packet.header.get_type(),
-                   header::MessageType::Acknowledgement);
+        assert_eq!(
+            packet.header.get_type(),
+            header::MessageType::Acknowledgement
+        );
         assert_eq!(packet.header.get_token_length(), 4);
-        assert_eq!(packet.header.code,
-                   header::MessageClass::Response(header::ResponseType::Content));
+        assert_eq!(
+            packet.header.code,
+            header::MessageClass::Response(header::ResponseType::Content)
+        );
         warn!("{}", packet.header.get_message_id());
         assert_eq!(packet.header.get_message_id(), 5117);
         assert_eq!(*packet.get_token(), vec![0xD0, 0xE2, 0x4D, 0xAC]);
@@ -500,9 +521,13 @@ mod test {
         packet.add_option(CoAPOption::UriPath, b"Hi".to_vec());
         packet.add_option(CoAPOption::UriPath, b"Test".to_vec());
         packet.add_option(CoAPOption::UriQuery, b"a=1".to_vec());
-        assert_eq!(packet.to_bytes().unwrap(),
-                   vec![0x44, 0x01, 0x84, 0x9e, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04,
-                        0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31]);
+        assert_eq!(
+            packet.to_bytes().unwrap(),
+            vec![
+                0x44, 0x01, 0x84, 0x9e, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04, 0x54, 0x65,
+                0x73, 0x74, 0x43, 0x61, 0x3d, 0x31
+            ]
+        );
     }
 
     #[test]
@@ -514,16 +539,22 @@ mod test {
         packet.header.set_message_id(5117);
         packet.set_token(vec![0xD0, 0xE2, 0x4D, 0xAC]);
         packet.payload = "Hello".as_bytes().to_vec();
-        assert_eq!(packet.to_bytes().unwrap(),
-                   vec![0x64, 0x45, 0x13, 0xFD, 0xD0, 0xE2, 0x4D, 0xAC, 0xFF, 0x48, 0x65, 0x6C,
-                        0x6C, 0x6F]);
+        assert_eq!(
+            packet.to_bytes().unwrap(),
+            vec![
+                0x64, 0x45, 0x13, 0xFD, 0xD0, 0xE2, 0x4D, 0xAC, 0xFF, 0x48, 0x65, 0x6C, 0x6C, 0x6F
+            ]
+        );
     }
 
     #[test]
     fn test_encode_decode_content_format() {
         let mut packet = Packet::new();
         packet.set_content_format(ContentFormat::ApplicationJSON);
-        assert_eq!(ContentFormat::ApplicationJSON, packet.get_content_format().unwrap())
+        assert_eq!(
+            ContentFormat::ApplicationJSON,
+            packet.get_content_format().unwrap()
+        )
     }
 
     #[test]
@@ -534,21 +565,20 @@ mod test {
 
     #[test]
     fn test_malicious_packet() {
-        use rand;
         use quickcheck::{QuickCheck, StdGen, TestResult};
+        use rand::prelude::*;
 
         fn run(x: Vec<u8>) -> TestResult {
             match Packet::from_bytes(&x[..]) {
-                Ok(packet) => {
-                    TestResult::from_bool(packet.get_token().len() ==
-                                          packet.header.get_token_length() as usize)
-                }
+                Ok(packet) => TestResult::from_bool(
+                    packet.get_token().len() == packet.header.get_token_length() as usize,
+                ),
                 Err(_) => TestResult::passed(),
             }
         }
         QuickCheck::new()
             .tests(10000)
-            .gen(StdGen::new(rand::thread_rng(), 1500))
+            .gen(StdGen::new(thread_rng(), 1500))
             .quickcheck(run as fn(Vec<u8>) -> TestResult)
     }
 }

@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HeaderRaw {
@@ -19,7 +19,7 @@ impl Default for HeaderRaw {
 
 #[derive(Clone, Debug)]
 pub struct Header {
-    ver_type_tkl: u8,   
+    ver_type_tkl: u8,
     pub code: MessageClass,
     message_id: u16,
 }

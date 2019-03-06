@@ -1,7 +1,5 @@
-extern crate coap;
-
-use coap::{CoAPServer, CoAPClient, CoAPRequest, CoAPResponse};
 use coap::IsMessage;
+use coap::{CoAPClient, CoAPRequest, CoAPResponse, CoAPServer};
 
 fn request_handler(request: CoAPRequest) -> Option<CoAPResponse> {
     let uri_path = request.get_path().to_string();
@@ -23,6 +21,8 @@ fn main() {
     println!("Client request: {}", url);
 
     let response = CoAPClient::get(url).unwrap();
-    println!("Server reply: {}",
-             String::from_utf8(response.message.payload).unwrap());
+    println!(
+        "Server reply: {}",
+        String::from_utf8(response.message.payload).unwrap()
+    );
 }

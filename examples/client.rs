@@ -1,8 +1,6 @@
-extern crate coap;
-
+use coap::{CoAPClient, CoAPRequest, IsMessage, Method};
 use std::io;
 use std::io::ErrorKind;
-use coap::{CoAPClient, CoAPRequest, IsMessage, Method};
 
 fn main() {
     println!("Request by GET:");
@@ -18,20 +16,21 @@ fn main() {
     example_observe();
 }
 
-
 fn example_get() {
     let url = "coap://127.0.0.1:5683/hello/get";
     println!("Client request: {}", url);
 
     match CoAPClient::get(url) {
         Ok(response) => {
-            println!("Server reply: {}",
-                     String::from_utf8(response.message.payload).unwrap());
+            println!(
+                "Server reply: {}",
+                String::from_utf8(response.message.payload).unwrap()
+            );
         }
         Err(e) => {
             match e.kind() {
-                ErrorKind::WouldBlock => println!("Request timeout"),   // Unix
-                ErrorKind::TimedOut => println!("Request timeout"),     // Windows
+                ErrorKind::WouldBlock => println!("Request timeout"), // Unix
+                ErrorKind::TimedOut => println!("Request timeout"),   // Windows
                 _ => println!("Request error: {:?}", e),
             }
         }
@@ -53,13 +52,15 @@ fn example_post() {
 
     match client.receive() {
         Ok(response) => {
-            println!("Server reply: {}",
-                     String::from_utf8(response.message.payload).unwrap());
+            println!(
+                "Server reply: {}",
+                String::from_utf8(response.message.payload).unwrap()
+            );
         }
         Err(e) => {
             match e.kind() {
-                ErrorKind::WouldBlock => println!("Request timeout"),   // Unix
-                ErrorKind::TimedOut => println!("Request timeout"),     // Windows
+                ErrorKind::WouldBlock => println!("Request timeout"), // Unix
+                ErrorKind::TimedOut => println!("Request timeout"),   // Windows
                 _ => println!("Request error: {:?}", e),
             }
         }
@@ -81,13 +82,15 @@ fn example_put() {
 
     match client.receive() {
         Ok(response) => {
-            println!("Server reply: {}",
-                     String::from_utf8(response.message.payload).unwrap());
+            println!(
+                "Server reply: {}",
+                String::from_utf8(response.message.payload).unwrap()
+            );
         }
         Err(e) => {
             match e.kind() {
-                ErrorKind::WouldBlock => println!("Request timeout"),   // Unix
-                ErrorKind::TimedOut => println!("Request timeout"),     // Windows
+                ErrorKind::WouldBlock => println!("Request timeout"), // Unix
+                ErrorKind::TimedOut => println!("Request timeout"),   // Windows
                 _ => println!("Request error: {:?}", e),
             }
         }
@@ -96,9 +99,14 @@ fn example_put() {
 
 fn example_observe() {
     let mut client = CoAPClient::new("127.0.0.1:5683").unwrap();
-    client.observe("/hello/put", |msg| {
-        println!("resource changed {}", String::from_utf8(msg.payload).unwrap());
-    }).unwrap();
+    client
+        .observe("/hello/put", |msg| {
+            println!(
+                "resource changed {}",
+                String::from_utf8(msg.payload).unwrap()
+            );
+        })
+        .unwrap();
 
     println!("Press any key to stop...");
 
