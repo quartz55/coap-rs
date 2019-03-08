@@ -1,10 +1,14 @@
+pub mod code;
+pub mod error;
 pub mod header;
+pub mod message;
+pub mod option;
+pub mod packet;
 pub mod request;
 pub mod response;
-pub mod packet;
 
-use self::packet::Packet;
 use self::header::Header;
+use self::packet::Packet;
 use std::collections::LinkedList;
 
 pub trait IsMessage {

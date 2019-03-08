@@ -1,6 +1,8 @@
 use crate::message::packet::Packet;
 use crate::message::request::{CoAPRequest, Method};
 use crate::message::response::CoAPResponse;
+use futures::future::FutureResult;
+use futures::future::{self, Either};
 use futures::try_ready;
 use log::{debug, error, info, warn};
 use std::io;
@@ -11,27 +13,44 @@ use tokio::sync::mpsc;
 
 use tokio::net::UdpSocket;
 
-fn handler(request: CoAPRequest) -> impl Future<Item = Option<CoAPResponse>, Error = io::Error> {
-    // match request.get_method() {
-    //     Method::Get => println!("GET {}", request.get_path()),
-    //     Method::Post => println!("POST {}", request.get_path()),
-    //     _ => println!("ANY {}", request.get_path()),
-    // }
-    futures::future::ok(request.response)
+fn default_handler(request: CoAPRequest) -> impl Future<Item = Option<CoAPResponse>, Error = ()> {
+    future::ok(request.response)
+}
+
+pub trait Handler {
+    fn handle(
+        &mut self,
+        request: CoAPRequest,
+    ) -> Box<dyn Future<Item = Option<CoAPResponse>, Error = ()> + Send>;
+}
+
+impl<B, F> Handler for F
+where
+    B: IntoFuture<Item = Option<CoAPResponse>, Error = ()>,
+    B::Future: Send + 'static,
+    F: Fn(CoAPRequest) -> B,
+{
+    fn handle(
+        &mut self,
+        request: CoAPRequest,
+    ) -> Box<dyn Future<Item = Option<CoAPResponse>, Error = ()> + Send> {
+        return Box::new(self(request).into_future());
+    }
 }
 
 struct Response(SocketAddr, Vec<u8>);
 
-pub struct CoAPServer {
+pub struct CoAPServer<H> {
     socket: UdpSocket,
     buf: Vec<u8>,
     rx: mpsc::Receiver<Response>,
     tx: mpsc::Sender<Response>,
     to_send: Option<Response>,
+    handler: H,
 }
 
-impl CoAPServer {
-    pub fn new<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
+impl<H> CoAPServer<H> {
+    pub fn with_handler<A: ToSocketAddrs>(addr: A, handler: H) -> io::Result<Self> {
         for addr in addr.to_socket_addrs()? {
             let socket = match UdpSocket::bind(&addr) {
                 Ok(socket) => socket,
@@ -44,13 +63,17 @@ impl CoAPServer {
                 rx,
                 tx,
                 to_send: None,
+                handler,
             });
         }
         return Err(io::ErrorKind::AddrNotAvailable.into());
     }
 }
 
-impl Future for CoAPServer {
+impl<H> Future for CoAPServer<H>
+where
+    H: Handler,
+{
     type Item = ();
     type Error = io::Error;
 
@@ -85,26 +108,28 @@ impl Future for CoAPServer {
             let request = CoAPRequest::from_packet(packet, &addr);
             debug!("Received CoAP request from {}: {:?}", addr, request);
             let tx = self.tx.clone();
-            let response_handler = handler(request)
+            let response_handler = self
+                .handler
+                .handle(request)
                 .map_err(|err| {
                     warn!("Request handler error: {:?}", err);
                     ()
                 })
                 .and_then(move |res| match res {
                     Some(res) => match res.message.to_bytes() {
-                        Ok(bytes) => tx.send(Response(addr, bytes)).then(|res| match res {
-                            Ok(_) => Ok(()),
-                            Err(err) => panic!("{:?}", err),
-                        }),
+                        Ok(bytes) => Either::A(
+                            tx.send(Response(addr, bytes))
+                                .map(|_| ())
+                                .map_err(|_| panic!("boom")),
+                        ),
                         Err(err) => {
                             warn!("Invalid response {:?}", err);
-                            panic!(":(");
-                            // Ok(())
+                            Either::B(future::ok(()))
                         }
                     },
                     None => {
-                        panic!(":(");
-                        // Ok(())
+                        debug!("No response");
+                        Either::B(future::ok(()))
                     }
                 });
             tokio::spawn(response_handler);

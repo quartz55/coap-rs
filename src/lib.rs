@@ -85,6 +85,7 @@ pub use self::message::response::Status;
 pub use self::message::IsMessage;
 pub use self::server::CoAPServer;
 pub mod client;
+pub mod error;
 pub mod message;
 mod observer;
 pub mod server;
