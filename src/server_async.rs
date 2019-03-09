@@ -1,3 +1,4 @@
+use crate::message::message::Message;
 use crate::message::packet::Packet;
 use crate::message::request::{CoAPRequest, Method};
 use crate::message::response::CoAPResponse;
@@ -98,41 +99,53 @@ where
             // Check for requests
             let (size, addr) = try_ready!(self.socket.poll_recv_from(&mut self.buf));
             debug!("Got {} bytes from {:?}", size, addr);
-            let packet = match Packet::from_bytes(&self.buf[..size]) {
-                Ok(packet) => packet,
+            let message = match Message::from_bytes(&self.buf[..size]) {
+                Ok(msg) => msg,
                 Err(err) => {
                     warn!("Invalid CoAP packet received in socket: {:?}", err);
                     continue;
                 }
             };
-            let request = CoAPRequest::from_packet(packet, &addr);
-            debug!("Received CoAP request from {}: {:?}", addr, request);
-            let tx = self.tx.clone();
-            let response_handler = self
-                .handler
-                .handle(request)
-                .map_err(|err| {
-                    warn!("Request handler error: {:?}", err);
-                    ()
-                })
-                .and_then(move |res| match res {
-                    Some(res) => match res.message.to_bytes() {
-                        Ok(bytes) => Either::A(
-                            tx.send(Response(addr, bytes))
-                                .map(|_| ())
-                                .map_err(|_| panic!("boom")),
-                        ),
-                        Err(err) => {
-                            warn!("Invalid response {:?}", err);
-                            Either::B(future::ok(()))
-                        }
-                    },
-                    None => {
-                        debug!("No response");
-                        Either::B(future::ok(()))
-                    }
-                });
-            tokio::spawn(response_handler);
+            println!("{:?}", message);
+            match message.payload {
+                Some(pl) => println!("{}", String::from_utf8(pl).unwrap()),
+                None => {}
+            };
+            // let packet = match Packet::from_bytes(&self.buf[..size]) {
+            //     Ok(packet) => packet,
+            //     Err(err) => {
+            //         warn!("Invalid CoAP packet received in socket: {:?}", err);
+            //         continue;
+            //     }
+            // };
+            // let request = CoAPRequest::from_packet(packet, &addr);
+            // debug!("Received CoAP request from {}: {:?}", addr, request);
+            // let tx = self.tx.clone();
+            // let response_handler = self
+            //     .handler
+            //     .handle(request)
+            //     .map_err(|err| {
+            //         warn!("Request handler error: {:?}", err);
+            //         ()
+            //     })
+            //     .and_then(move |res| match res {
+            //         Some(res) => match res.message.to_bytes() {
+            //             Ok(bytes) => Either::A(
+            //                 tx.send(Response(addr, bytes))
+            //                     .map(|_| ())
+            //                     .map_err(|_| panic!("boom")),
+            //             ),
+            //             Err(err) => {
+            //                 warn!("Invalid response {:?}", err);
+            //                 Either::B(future::ok(()))
+            //             }
+            //         },
+            //         None => {
+            //             debug!("No response");
+            //             Either::B(future::ok(()))
+            //         }
+            //     });
+            // tokio::spawn(response_handler);
         }
     }
 }
