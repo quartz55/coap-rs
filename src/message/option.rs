@@ -34,6 +34,21 @@ impl Opts {
     }
 }
 
+pub enum Class {
+    Critical,
+    Elective,
+}
+
+pub enum Proxy {
+    SafeToForward,
+    Unsafe,
+}
+
+pub enum Cache {
+    NoCacheKey,
+    ChaceKey(u8),
+}
+
 pub trait Opt: Sized {
     const NUMBER: u16;
     type Format;
@@ -42,6 +57,32 @@ pub trait Opt: Sized {
     fn from_bytes(bytes: &[u8]) -> Result<Self, Error>;
     fn to_bytes(&self) -> Cow<[u8]>;
     fn len(&self) -> usize;
+
+    #[inline(always)]
+    fn class() -> Class {
+        match (Self::NUMBER & 0x0F) & 0b0001 {
+            0 => Class::Elective,
+            1 => Class::Critical,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline(always)]
+    fn proxy() -> Proxy {
+        match (Self::NUMBER & 0x0F) & 0b0010 {
+            0 => Proxy::SafeToForward,
+            1 => Proxy::Unsafe,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline(always)]
+    fn cache_key() -> Cache {
+        match (Self::NUMBER & 0x0F) >> 2 {
+            0b0111 => Cache::NoCacheKey,
+            c => Cache::ChaceKey(c as u8),
+        }
+    }
 }
 
 macro_rules! option {
