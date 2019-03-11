@@ -1,5 +1,5 @@
 use super::code::Code;
-use super::error::Error;
+use super::error::{Error, FormatError, Result};
 use super::option::Opts;
 use arrayvec::ArrayVec;
 use byteorder::{ByteOrder, BE};
@@ -20,9 +20,9 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < HEADER_SIZE {
-            return Err(Error::MessageFormat);
+            return Err(Error::PacketTooSmall(bytes.len()));
         }
 
         let (header, bytes) = bytes.split_at(HEADER_SIZE);
@@ -33,10 +33,13 @@ impl Message {
         let mtype = MessageType::from_u8(&mtype);
         let token_len = (header[0] & 0x0F) as usize;
         if token_len > 8 {
-            return Err(Error::MessageFormat);
+            return Err(FormatError::InvalidTokenLength(token_len))?;
         }
         if bytes.len() < token_len {
-            return Err(Error::MessageFormat);
+            return Err(FormatError::TokenLengthMismatch {
+                actual: bytes.len(),
+                expected: token_len,
+            })?;
         }
         let code = Code::from_u8(header[1]);
         let mid = BE::read_u16(&header[2..]);
@@ -55,7 +58,7 @@ impl Message {
                 d if d <= 12 => (d as u16, 1),
                 13 if i + 1 < bytes.len() => (bytes[i + 1] as u16 + 13, 2),
                 14 if i + 2 < bytes.len() => (BE::read_u16(&bytes[i + 1..i + 3]) + 269, 3),
-                _ => return Err(Error::MessageFormat),
+                _ => return Err(FormatError::InvalidOptionDelta)?,
             };
             let (length, offset) = match header & 0x0F {
                 d if d <= 12 => (d as u16, offset),
@@ -64,7 +67,7 @@ impl Message {
                     BE::read_u16(&bytes[(i + offset)..(i + offset + 2)]) + 269,
                     offset + 2,
                 ),
-                _ => return Err(Error::MessageFormat),
+                _ => return Err(FormatError::InvalidOptionLength)?,
             };
 
             let opt_num = opt_num_offset + delta;
@@ -75,7 +78,10 @@ impl Message {
             let value = if val_i + length < bytes.len() {
                 &bytes[val_i..val_i + length]
             } else {
-                return Err(Error::MessageFormat);
+                return Err(FormatError::OptionLengthMismatch {
+                    actual: bytes.len() - val_i,
+                    expected: length,
+                })?;
             };
 
             options.push_raw(opt_num, value);
@@ -89,7 +95,9 @@ impl Message {
             true => {
                 let rest = &bytes[i..];
                 match (rest[0], rest.len()) {
-                    (PAYLOAD_MARKER, len) if len <= 1 => return Err(Error::MessageFormat),
+                    (PAYLOAD_MARKER, len) if len <= 1 => {
+                        return Err(FormatError::UnexpectedPayloadMarker)?;
+                    }
                     (PAYLOAD_MARKER, _) => Some(rest[1..].to_vec()),
                     _ => None,
                 }

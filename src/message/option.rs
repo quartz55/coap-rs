@@ -1,4 +1,4 @@
-use super::error::Error;
+use super::error::{FormatError, Result};
 use byteorder::{ByteOrder, WriteBytesExt, BE};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -54,7 +54,7 @@ pub trait Opt: Sized {
     type Format;
 
     fn new(value: Self::Format) -> Self;
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Error>;
+    fn from_bytes(bytes: &[u8]) -> Result<Self>;
     fn to_bytes(&self) -> Cow<[u8]>;
     fn len(&self) -> usize;
 
@@ -99,12 +99,15 @@ macro_rules! option {
                 Self(value)
             }
 
-            fn from_bytes($bytes: &[u8]) -> Result<Self, Error> {
+            fn from_bytes($bytes: &[u8]) -> Result<Self> {
                 let len = $bytes.len();
                 if len >= $min as usize && len <= $max as usize {
                     Ok(Self($from_bytes))
                 } else {
-                    Err(Error::MessageFormat)
+                    Err(FormatError::InvalidOptionValue {
+                        range: ($min..$max),
+                        actual: len,
+                    })?
                 }
             }
 
@@ -142,7 +145,7 @@ macro_rules! option {
         option! {
             @make $name no.($num) length [$min, $max];
             val: String => [{Cow::Owned(val.clone().into_bytes())}, val.bytes().len()];
-            bytes => {String::from_utf8(bytes.to_vec()).or(Err(Error::MessageFormat))?}
+            bytes => {String::from_utf8(bytes.to_vec()).or_else(|e| Err(FormatError::InvalidOption(e.to_string())))?}
         }
     };
     (no.($num:expr) | $name:ident | uint[$min:expr, $max:expr]) => {
