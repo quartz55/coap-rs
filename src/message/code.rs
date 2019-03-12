@@ -1,3 +1,34 @@
+pub struct RawCode(pub u8, pub u8);
+
+impl RawCode {
+    #[inline(always)]
+    pub fn class(raw: u8) -> u8 {
+        raw >> 5
+    }
+    #[inline(always)]
+    pub fn detail(raw: u8) -> u8 {
+        raw & 0x1F
+    }
+}
+
+impl RawCode {
+    pub fn from_u8(raw: u8) -> Self {
+        Self(Self::class(raw), Self::detail(raw))
+    }
+    #[inline(always)]
+    pub fn as_u8(&self) -> u8 {
+        (self.0 << 5) | self.1
+    }
+    #[inline(always)]
+    pub fn is_request(&self) -> bool {
+        self.0 == 0
+    }
+    #[inline(always)]
+    pub fn is_response(&self) -> bool {
+        self.0 == 2 || self.0 == 4 || self.0 == 5
+    }
+}
+
 #[derive(PartialEq, Eq, Debug)]
 pub enum Code {
     Empty,

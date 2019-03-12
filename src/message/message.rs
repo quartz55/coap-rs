@@ -1,12 +1,10 @@
 use super::code::Code;
 use super::error::{Error, FormatError, Result};
 use super::option::Opts;
+use crate::params::{HEADER_SIZE, PAYLOAD_MARKER};
 use arrayvec::ArrayVec;
 use byteorder::{ByteOrder, BE};
 use std::iter::FromIterator;
-
-const PAYLOAD_MARKER: u8 = 0xFF;
-const HEADER_SIZE: usize = 4;
 
 #[derive(Debug)]
 pub struct Message {
@@ -49,6 +47,7 @@ impl Message {
         let token = ArrayVec::from_iter(token.iter().cloned());
 
         // Parse options
+        // https://tools.ietf.org/html/rfc7252#section-3.1
         let mut i = 0;
         let mut options = Opts::new();
         let mut opt_num_offset = 0u16;
