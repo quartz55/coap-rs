@@ -1,3 +1,4 @@
+use crate::params::VERSION;
 use std::error::Error as StdError;
 use std::fmt;
 use std::ops::Range;
@@ -7,7 +8,9 @@ pub type Result<T> = StdResult<T, Error>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatError {
+    UnknownVersion(u8),
     InvalidTokenLength(usize),
+    InvalidEmptyCode(String),
     TokenLengthMismatch { actual: usize, expected: usize },
     InvalidOptionDelta,
     InvalidOptionLength,
@@ -21,11 +24,13 @@ impl fmt::Display for FormatError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use FormatError::*;
         match self {
+            UnknownVersion(ver) => write!(f, "unkown version number {} (must be {})", ver, VERSION),
             InvalidTokenLength(tkl) => write!(
                 f,
                 "invalid token length {} (lengths 9 to 15 are reserved)",
                 tkl
             ),
+            InvalidEmptyCode(ref reason) => write!(f, "invalid empty code: {}", reason),
             TokenLengthMismatch { actual, expected } => write!(
                 f,
                 "invalid token (expected {} bytes, got {})",

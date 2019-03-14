@@ -1,4 +1,6 @@
-use crate::message::message::Message;
+use crate::message::Message;
+use crate::request::Request;
+use crate::response::{Carry, Response};
 use futures::future::FutureResult;
 use futures::future::{self, Either};
 use futures::try_ready;
@@ -11,43 +13,35 @@ use tokio::sync::mpsc;
 
 use tokio::net::UdpSocket;
 
-fn default_handler(request: CoAPRequest) -> impl Future<Item = Option<CoAPResponse>, Error = ()> {
-    future::ok(request.response)
+pub fn default_handler(request: &Request) -> impl Future<Item = Carry, Error = ()> {
+    future::ok(Carry::Piggyback(Response::from_request(request)))
 }
 
 pub trait Handler {
-    fn handle(
-        &mut self,
-        request: CoAPRequest,
-    ) -> Box<dyn Future<Item = Option<CoAPResponse>, Error = ()> + Send>;
+    fn handle(&mut self, request: &Request) -> Box<dyn Future<Item = Carry, Error = ()> + Send>;
 }
 
 impl<B, F> Handler for F
 where
-    B: IntoFuture<Item = Option<CoAPResponse>, Error = ()>,
+    B: IntoFuture<Item = Carry, Error = ()>,
     B::Future: Send + 'static,
-    F: Fn(CoAPRequest) -> B,
+    F: Fn(&Request) -> B,
 {
-    fn handle(
-        &mut self,
-        request: CoAPRequest,
-    ) -> Box<dyn Future<Item = Option<CoAPResponse>, Error = ()> + Send> {
+    fn handle(&mut self, request: &Request) -> Box<dyn Future<Item = Carry, Error = ()> + Send> {
         return Box::new(self(request).into_future());
     }
 }
 
-struct Response(SocketAddr, Vec<u8>);
-
-pub struct CoAPServer<H> {
+pub struct Server<H> {
     socket: UdpSocket,
     buf: Vec<u8>,
-    rx: mpsc::Receiver<Response>,
-    tx: mpsc::Sender<Response>,
-    to_send: Option<Response>,
+    rx: mpsc::Receiver<Carry>,
+    tx: mpsc::Sender<Carry>,
+    to_send: Option<Carry>,
     handler: H,
 }
 
-impl<H> CoAPServer<H> {
+impl<H> Server<H> {
     pub fn with_handler<A: ToSocketAddrs>(addr: A, handler: H) -> io::Result<Self> {
         for addr in addr.to_socket_addrs()? {
             let socket = match UdpSocket::bind(&addr) {
@@ -68,9 +62,9 @@ impl<H> CoAPServer<H> {
     }
 }
 
-impl<H> Future for CoAPServer<H>
-where
-    H: Handler,
+impl<H> Future for Server<H>
+// where
+//     H: Handler,
 {
     type Item = ();
     type Error = io::Error;
@@ -78,10 +72,18 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             // Handle response to send
-            if let Some(Response(ref addr, ref bytes)) = self.to_send {
-                let amt = try_ready!(self.socket.poll_send_to(bytes, addr));
-                debug!("Sent {} bytes of response to {:?}", amt, addr);
-                self.to_send = None;
+            if let Some(ref carry) = self.to_send {
+                match carry {
+                    Carry::Piggyback(res) => {
+                        let addr = res.dest();
+                        let message = res.serialize();
+                        debug!("Trying to send message to {:?}\n{}", addr, message);
+                        let out = message.as_bytes().unwrap();
+                        let amt = try_ready!(self.socket.poll_send_to(&out, addr));
+                        debug!("Sent {} bytes of response to {:?}", amt, addr);
+                        self.to_send = None;
+                    }
+                }
             };
 
             match self.rx.poll() {
@@ -99,25 +101,20 @@ where
             let message = match Message::from_bytes(&self.buf[..size]) {
                 Ok(msg) => msg,
                 Err(err) => {
-                    warn!("Invalid CoAP packet received in socket: {:?}", err);
+                    warn!("Invalid CoAP packet received in socket: {}", err);
                     continue;
                 }
             };
             println!("{:?}", message);
-            match message.payload {
-                Some(pl) => println!("{}", String::from_utf8(pl).unwrap()),
-                None => {}
-            };
-            // let packet = match Packet::from_bytes(&self.buf[..size]) {
-            //     Ok(packet) => packet,
-            //     Err(err) => {
-            //         warn!("Invalid CoAP packet received in socket: {:?}", err);
-            //         continue;
-            //     }
-            // };
-            // let request = CoAPRequest::from_packet(packet, &addr);
-            // debug!("Received CoAP request from {}: {:?}", addr, request);
-            // let tx = self.tx.clone();
+            println!("{}", message);
+            let req = Request::from_message(addr, message).unwrap();
+            println!("{:?}", req);
+            let tx = self.tx.clone();
+            tokio::spawn(
+                tx.send(Carry::Piggyback(Response::from_request(&req)))
+                    .map(|_| ())
+                    .map_err(|_| ()),
+            );
             // let response_handler = self
             //     .handler
             //     .handle(request)

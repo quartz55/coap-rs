@@ -1,20 +1,23 @@
-use super::code::Code;
+use super::body::Body;
+use super::code::{Method, RawCode, ResponseCode};
 use super::error::{Error, FormatError, Result};
-use super::option::Opts;
-use crate::params::{HEADER_SIZE, PAYLOAD_MARKER};
-use arrayvec::ArrayVec;
-use byteorder::{ByteOrder, BE};
+use super::header::Header;
+use crate::params::HEADER_SIZE;
+use std::fmt;
 use std::iter::FromIterator;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub enum MessageKind {
+    Empty,
+    Request(Body),
+    Response(Body),
+    Reserved(Body),
+}
+
+#[derive(Debug, Clone)]
 pub struct Message {
-    pub version: u8,
-    pub mtype: MessageType,
-    pub code: Code,
-    pub mid: u16,
-    pub token: ArrayVec<[u8; 8]>,
-    pub options: Opts,
-    pub payload: Option<Vec<u8>>,
+    pub header: Header,
+    pub kind: MessageKind,
 }
 
 impl Message {
@@ -23,123 +26,82 @@ impl Message {
             return Err(Error::PacketTooSmall(bytes.len()));
         }
 
-        let (header, bytes) = bytes.split_at(HEADER_SIZE);
-
         // Parse header
-        let version = header[0] >> 6;
-        let mtype = (header[0] >> 4) & 0b11;
-        let mtype = MessageType::from_u8(&mtype);
-        let token_len = (header[0] & 0x0F) as usize;
-        if token_len > 8 {
-            return Err(FormatError::InvalidTokenLength(token_len))?;
-        }
-        if bytes.len() < token_len {
-            return Err(FormatError::TokenLengthMismatch {
-                actual: bytes.len(),
-                expected: token_len,
-            })?;
-        }
-        let code = Code::from_u8(header[1]);
-        let mid = BE::read_u16(&header[2..]);
+        let (header, bytes) = bytes.split_at(HEADER_SIZE);
+        let header = Header::from_bytes(header)?;
 
-        // Parse token
-        let (token, bytes) = bytes.split_at(token_len);
-        let token = ArrayVec::from_iter(token.iter().cloned());
-
-        // Parse options
-        // https://tools.ietf.org/html/rfc7252#section-3.1
-        let mut i = 0;
-        let mut options = Opts::new();
-        let mut opt_num_offset = 0u16;
-        while i < bytes.len() && bytes[i] != PAYLOAD_MARKER {
-            let header = bytes[i];
-            let (delta, offset) = match header >> 4 {
-                d if d <= 12 => (d as u16, 1),
-                13 if i + 1 < bytes.len() => (bytes[i + 1] as u16 + 13, 2),
-                14 if i + 2 < bytes.len() => (BE::read_u16(&bytes[i + 1..i + 3]) + 269, 3),
-                _ => return Err(FormatError::InvalidOptionDelta)?,
-            };
-            let (length, offset) = match header & 0x0F {
-                d if d <= 12 => (d as u16, offset),
-                13 if i + offset + 1 < bytes.len() => (bytes[i + offset] as u16 + 13, offset + 1),
-                14 if i + offset + 2 < bytes.len() => (
-                    BE::read_u16(&bytes[(i + offset)..(i + offset + 2)]) + 269,
-                    offset + 2,
-                ),
-                _ => return Err(FormatError::InvalidOptionLength)?,
-            };
-
-            let opt_num = opt_num_offset + delta;
-            opt_num_offset = opt_num;
-
-            let length = length as usize;
-            let val_i = i + offset;
-            let value = if val_i + length < bytes.len() {
-                &bytes[val_i..val_i + length]
-            } else {
-                return Err(FormatError::OptionLengthMismatch {
-                    actual: bytes.len() - val_i,
-                    expected: length,
-                })?;
-            };
-
-            options.push_raw(opt_num, value);
-
-            i += offset + length;
-        }
-
-        // Parse payload
-        let payload = match i < bytes.len() {
-            false => None,
-            true => {
-                let rest = &bytes[i..];
-                match (rest[0], rest.len()) {
-                    (PAYLOAD_MARKER, len) if len <= 1 => {
-                        return Err(FormatError::UnexpectedPayloadMarker)?;
-                    }
-                    (PAYLOAD_MARKER, _) => Some(rest[1..].to_vec()),
-                    _ => None,
-                }
+        // Handle Empty message special case (code 0.00)
+        if header.code == RawCode(0, 00) {
+            if header.tkl != 0 {
+                return Err(FormatError::InvalidEmptyCode(
+                    "token length must be 0".into(),
+                ))?;
             }
+            if bytes.len() != 0 {
+                return Err(FormatError::InvalidEmptyCode(
+                    "bytes must not be present after message ID".into(),
+                ))?;
+            }
+            return Ok(Self {
+                header,
+                kind: MessageKind::Empty,
+            });
+        }
+
+        let body = Body::from_bytes(&header, bytes)?;
+
+        let kind = match header.code.class() {
+            0 => MessageKind::Request(body),
+            2..=5 => MessageKind::Response(body),
+            _ => MessageKind::Reserved(body),
         };
 
-        Ok(Self {
-            version,
-            mtype,
-            code,
-            mid,
-            token,
-            options,
-            payload,
-        })
+        Ok(Self { header, kind })
     }
-}
 
-#[derive(Debug)]
-pub enum MessageType {
-    Confirmable,
-    NonConfirmable,
-    Acknowledgement,
-    Reset,
-}
-
-impl MessageType {
-    pub fn from_u8(v: &u8) -> Self {
-        match v & 0b11 {
-            0 => MessageType::Confirmable,
-            1 => MessageType::NonConfirmable,
-            2 => MessageType::Acknowledgement,
-            3 => MessageType::Reset,
-            _ => unreachable!(),
+    pub fn as_bytes(&self) -> Result<Vec<u8>> {
+        use MessageKind::*;
+        match &self.kind {
+            Empty => Ok(self.header.to_bytes()?.to_vec()),
+            Request(body) | Response(body) | Reserved(body) => {
+                let mut body = body.to_bytes();
+                let mut buf = Vec::with_capacity(4 + body.len());
+                buf.append(&mut self.header.to_bytes()?.to_vec());
+                buf.append(&mut body);
+                Ok(buf)
+            }
         }
     }
+}
 
-    pub fn as_u8(&self) -> u8 {
-        match self {
-            MessageType::Confirmable => 0,
-            MessageType::NonConfirmable => 1,
-            MessageType::Acknowledgement => 2,
-            MessageType::Reset => 3,
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.kind {
+            MessageKind::Empty => write!(f, "Header: {}", self.header),
+            kind => {
+                let body = match kind {
+                    MessageKind::Request(body)
+                    | MessageKind::Response(body)
+                    | MessageKind::Reserved(body) => body,
+                    _ => unreachable!(),
+                };
+                let code = match kind {
+                    MessageKind::Request(_) => {
+                        Method::from_raw_code(self.header.code).unwrap().to_string()
+                    }
+                    MessageKind::Response(_) => ResponseCode::from_raw_code(self.header.code)
+                        .unwrap()
+                        .to_string(),
+                    MessageKind::Reserved(_) => self.header.code.to_string(),
+                    _ => unreachable!(),
+                };
+                write!(f, "Header: {} {}\n", code, self.header)?;
+                write!(f, "Token: {}", body.token)?;
+                if let Some(ref pl) = body.payload {
+                    write!(f, "\nPayload: {} bytes", pl.len())?;
+                }
+                Ok(())
+            }
         }
     }
 }

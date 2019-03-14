@@ -3,7 +3,7 @@ use byteorder::{ByteOrder, WriteBytesExt, BE};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Opts(BTreeMap<u16, Vec<Vec<u8>>>);
 
 impl Opts {
@@ -46,7 +46,7 @@ pub enum Proxy {
 
 pub enum Cache {
     NoCacheKey,
-    ChaceKey(u8),
+    CacheKey(u8),
 }
 
 pub trait Opt: Sized {
@@ -80,7 +80,7 @@ pub trait Opt: Sized {
     fn cache_key() -> Cache {
         match (Self::NUMBER & 0x0F) >> 2 {
             0b0111 => Cache::NoCacheKey,
-            c => Cache::ChaceKey(c as u8),
+            c => Cache::CacheKey(c as u8),
         }
     }
 }
@@ -145,7 +145,10 @@ macro_rules! option {
         option! {
             @make $name no.($num) length [$min, $max];
             val: String => [{Cow::Owned(val.clone().into_bytes())}, val.bytes().len()];
-            bytes => {String::from_utf8(bytes.to_vec()).or_else(|e| Err(FormatError::InvalidOption(e.to_string())))?}
+            bytes => {
+                String::from_utf8(bytes.to_vec())
+                    .or_else(|e| Err(FormatError::InvalidOption(e.to_string())))?
+            }
         }
     };
     (no.($num:expr) | $name:ident | uint[$min:expr, $max:expr]) => {
