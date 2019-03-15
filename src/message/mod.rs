@@ -6,9 +6,11 @@ pub mod header;
 pub mod option;
 pub mod token;
 
+mod builder;
 mod message;
 
 pub use body::Body;
+pub use builder::MessageBuilder;
 pub use code::{Method, RawCode, ResponseCode};
 pub use header::{Header, MessageType};
 pub use message::{Message, MessageKind};

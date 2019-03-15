@@ -13,6 +13,14 @@ pub struct Body {
 }
 
 impl Body {
+    pub fn new(token: Token, options: Opts, payload: Option<Vec<u8>>) -> Self {
+        Self {
+            token,
+            options,
+            payload,
+        }
+    }
+
     pub fn from_bytes(header: &Header, bytes: &[u8]) -> Result<Self> {
         // Parse token
         if bytes.len() < header.tkl {

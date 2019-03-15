@@ -37,10 +37,14 @@ impl PartialEq<[u8]> for Token {
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "0x")?;
-        for byte in &self.0 {
-            write!(f, "{:x}", byte)?;
+        if self.len() == 0 {
+            write!(f, "NULL")
+        } else {
+            write!(f, "0x")?;
+            for byte in &self.0 {
+                write!(f, "{:x}", byte)?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 }

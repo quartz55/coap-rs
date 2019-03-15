@@ -2,9 +2,9 @@ use super::body::Body;
 use super::code::{Method, RawCode, ResponseCode};
 use super::error::{Error, FormatError, Result};
 use super::header::Header;
+use super::header::MessageType;
 use crate::params::HEADER_SIZE;
 use std::fmt;
-use std::iter::FromIterator;
 
 #[derive(Debug, Clone)]
 pub enum MessageKind {
@@ -21,6 +21,19 @@ pub struct Message {
 }
 
 impl Message {
+    pub fn empty(message_type: MessageType, message_id: u16) -> Self {
+        Self {
+            header: Header {
+                version: 1,
+                mtype: message_type,
+                tkl: 0,
+                code: RawCode(0, 00),
+                message_id,
+            },
+            kind: MessageKind::Empty,
+        }
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < HEADER_SIZE {
             return Err(Error::PacketTooSmall(bytes.len()));
@@ -34,12 +47,12 @@ impl Message {
         if header.code == RawCode(0, 00) {
             if header.tkl != 0 {
                 return Err(FormatError::InvalidEmptyCode(
-                    "token length must be 0".into(),
+                    "token length MUST be 0".into(),
                 ))?;
             }
             if bytes.len() != 0 {
                 return Err(FormatError::InvalidEmptyCode(
-                    "bytes must not be present after message ID".into(),
+                    "bytes MUST NOT be present after message ID".into(),
                 ))?;
             }
             return Ok(Self {
@@ -65,7 +78,7 @@ impl Message {
             Empty => Ok(self.header.to_bytes()?.to_vec()),
             Request(body) | Response(body) | Reserved(body) => {
                 let mut body = body.to_bytes();
-                let mut buf = Vec::with_capacity(4 + body.len());
+                let mut buf = Vec::with_capacity(HEADER_SIZE + body.len());
                 buf.append(&mut self.header.to_bytes()?.to_vec());
                 buf.append(&mut body);
                 Ok(buf)
@@ -77,7 +90,10 @@ impl Message {
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.kind {
-            MessageKind::Empty => write!(f, "Header: {}", self.header),
+            MessageKind::Empty => {
+                write!(f, "-------- EMPTY --------\n")?;
+                write!(f, "Header: {}", self.header)
+            }
             kind => {
                 let body = match kind {
                     MessageKind::Request(body)
@@ -85,16 +101,21 @@ impl fmt::Display for Message {
                     | MessageKind::Reserved(body) => body,
                     _ => unreachable!(),
                 };
-                let code = match kind {
-                    MessageKind::Request(_) => {
-                        Method::from_raw_code(self.header.code).unwrap().to_string()
-                    }
-                    MessageKind::Response(_) => ResponseCode::from_raw_code(self.header.code)
-                        .unwrap()
-                        .to_string(),
-                    MessageKind::Reserved(_) => self.header.code.to_string(),
+                let (kind, code) = match kind {
+                    MessageKind::Request(_) => (
+                        "REQUEST",
+                        Method::from_raw_code(self.header.code).unwrap().to_string(),
+                    ),
+                    MessageKind::Response(_) => (
+                        "RESPONSE",
+                        ResponseCode::from_raw_code(self.header.code)
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    MessageKind::Reserved(_) => ("RESERVED", self.header.code.to_string()),
                     _ => unreachable!(),
                 };
+                write!(f, "-------- {} --------\n", kind)?;
                 write!(f, "Header: {} {}\n", code, self.header)?;
                 write!(f, "Token: {}", body.token)?;
                 if let Some(ref pl) = body.payload {

@@ -55,6 +55,18 @@ impl RawCode {
     }
 }
 
+impl From<u8> for RawCode {
+    fn from(raw: u8) -> Self {
+        Self::from_u8(raw)
+    }
+}
+
+impl From<(u8, u8)> for RawCode {
+    fn from((class, detail): (u8, u8)) -> Self {
+        Self(class, detail)
+    }
+}
+
 #[derive(Debug)]
 pub enum Method {
     Get,
@@ -85,6 +97,11 @@ impl Method {
         }
     }
 }
+impl Default for Method {
+    fn default() -> Self {
+        Method::Get
+    }
+}
 
 impl fmt::Display for Method {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -98,7 +115,7 @@ impl fmt::Display for Method {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SuccessCode {
     Created,
     Deleted,
@@ -114,7 +131,7 @@ impl Default for SuccessCode {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ClientErrorCode {
     BadRequest,
     Unauthorized,
@@ -135,7 +152,7 @@ impl Default for ClientErrorCode {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ServerErrorCode {
     InternalServerError,
     NotImplemented,
@@ -152,7 +169,7 @@ impl Default for ServerErrorCode {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ResponseCode {
     Success(SuccessCode),
     ClientError(ClientErrorCode),
@@ -221,17 +238,15 @@ impl ResponseCode {
             (5, 04) => Ok(ResponseCode::ServerError(GatewayTimeout)),
             (5, 05) => Ok(ResponseCode::ServerError(ProxyingNotSupported)),
             (5, dd) => Ok(ResponseCode::ServerError(ServerErrorCode::Unknown(dd))),
-            (c, dd) => Err(Error::InvalidResponseCode(c)),
+            (c, _dd) => Err(Error::InvalidResponseCode(c)),
         }
     }
-}
 
-impl fmt::Display for ResponseCode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    pub fn name(&self) -> &'static str {
         use ClientErrorCode::*;
         use ServerErrorCode::*;
         use SuccessCode::*;
-        let name = match self {
+        match self {
             ResponseCode::Success(Created) => "Created",
             ResponseCode::Success(Deleted) => "Deleted",
             ResponseCode::Success(Valid) => "Valid",
@@ -256,9 +271,37 @@ impl fmt::Display for ResponseCode {
             ResponseCode::Success(SuccessCode::Unknown(_))
             | ResponseCode::ClientError(ClientErrorCode::Unknown(_))
             | ResponseCode::ServerError(ServerErrorCode::Unknown(_)) => "Unknown",
-        };
+        }
+    }
+}
 
-        write!(f, "{} {}", self.as_raw_code(), name)
+impl fmt::Display for ResponseCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.as_raw_code(), self.name())
+    }
+}
+
+impl Default for ResponseCode {
+    fn default() -> Self {
+        SuccessCode::default().into()
+    }
+}
+
+impl From<SuccessCode> for ResponseCode {
+    fn from(code: SuccessCode) -> ResponseCode {
+        ResponseCode::Success(code)
+    }
+}
+
+impl From<ClientErrorCode> for ResponseCode {
+    fn from(code: ClientErrorCode) -> ResponseCode {
+        ResponseCode::ClientError(code)
+    }
+}
+
+impl From<ServerErrorCode> for ResponseCode {
+    fn from(code: ServerErrorCode) -> ResponseCode {
+        ResponseCode::ServerError(code)
     }
 }
 

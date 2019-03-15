@@ -1,5 +1,5 @@
 use crate::message::code::SuccessCode;
-use crate::message::{Body, Header, Message, MessageKind, MessageType, Opts, ResponseCode, Token};
+use crate::message::{Message, MessageBuilder, MessageType, Opts, ResponseCode, Token};
 use crate::request::Request;
 use futures::future::Future;
 use std::net::SocketAddr;
@@ -28,22 +28,16 @@ impl Response {
     }
 
     pub fn serialize(&self) -> Message {
-        let header = Header {
-            version: 1,
-            mtype: self.message_type.clone(),
-            tkl: self.token.len(),
-            code: self.code.as_raw_code(),
-            message_id: self.message_id,
+        let m = MessageBuilder::response()
+            .acknowledgement()
+            .message_id(self.message_id)
+            .response_code(self.code)
+            .token(self.token.clone());
+        let m = match self.payload {
+            None => m,
+            Some(ref pl) => m.payload(pl.clone()),
         };
-        let body = Body {
-            token: self.token.clone(),
-            options: self.options.clone(),
-            payload: self.payload.clone(),
-        };
-        Message {
-            header,
-            kind: MessageKind::Response(body),
-        }
+        m.build()
     }
 
     pub fn dest(&self) -> &SocketAddr {

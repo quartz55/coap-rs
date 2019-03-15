@@ -1,6 +1,9 @@
+use crate::error::{self, Error as CoapError, ErrorKind, MessageError, Result as CoapResult};
 use crate::message::Message;
+use crate::message::MessageBuilder;
 use crate::request::Request;
 use crate::response::{Carry, Response};
+use arrayvec::ArrayVec;
 use futures::future::FutureResult;
 use futures::future::{self, Either};
 use futures::try_ready;
@@ -34,11 +37,12 @@ where
 
 pub struct Server<H> {
     socket: UdpSocket,
-    buf: Vec<u8>,
+    buf: ArrayVec<[u8; 1024]>,
     rx: mpsc::Receiver<Carry>,
     tx: mpsc::Sender<Carry>,
     to_send: Option<Carry>,
     handler: H,
+    mid: u64,
 }
 
 impl<H> Server<H> {
@@ -51,11 +55,12 @@ impl<H> Server<H> {
             let (tx, rx) = mpsc::channel(1024);
             return Ok(Self {
                 socket,
-                buf: vec![0; 1024],
+                buf: ArrayVec::new(),
                 rx,
                 tx,
                 to_send: None,
                 handler,
+                mid: 0,
             });
         }
         return Err(io::ErrorKind::AddrNotAvailable.into());
@@ -67,11 +72,10 @@ impl<H> Future for Server<H>
 //     H: Handler,
 {
     type Item = ();
-    type Error = io::Error;
+    type Error = CoapError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            // Handle response to send
             if let Some(ref carry) = self.to_send {
                 match carry {
                     Carry::Piggyback(res) => {
@@ -79,7 +83,10 @@ impl<H> Future for Server<H>
                         let message = res.serialize();
                         debug!("Trying to send message to {:?}\n{}", addr, message);
                         let out = message.as_bytes().unwrap();
-                        let amt = try_ready!(self.socket.poll_send_to(&out, addr));
+                        let amt = try_ready!(self
+                            .socket
+                            .poll_send_to(&out, addr)
+                            .map_err(|e| ErrorKind::ServerIo(e)));
                         debug!("Sent {} bytes of response to {:?}", amt, addr);
                         self.to_send = None;
                     }
@@ -92,54 +99,56 @@ impl<H> Future for Server<H>
                     self.to_send = Some(res);
                     continue;
                 }
-                Ok(Async::Ready(None)) | Err(_) => return Err(io::ErrorKind::BrokenPipe.into()),
+                Ok(Async::Ready(None)) | Err(_) => {
+                    return Err(ErrorKind::ServerIo(io::ErrorKind::BrokenPipe.into()))?;
+                }
             };
 
             // Check for requests
-            let (size, addr) = try_ready!(self.socket.poll_recv_from(&mut self.buf));
+            let (size, addr) = try_ready!(self
+                .socket
+                .poll_recv_from(&mut self.buf)
+                .map_err(|e| ErrorKind::ServerIo(e)));
+
             debug!("Got {} bytes from {:?}", size, addr);
             let message = match Message::from_bytes(&self.buf[..size]) {
                 Ok(msg) => msg,
-                Err(err) => {
-                    warn!("Invalid CoAP packet received in socket: {}", err);
+                Err(MessageError::PacketTooSmall(_)) => {
+                    warn!("Received non CoAP datagram");
+                    continue;
+                }
+                Err(err @ MessageError::MessageFormat(_)) => {
+                    warn!(
+                        "Received CoAP message with invalid format: {}",
+                        error::pprint_error(&err)
+                    );
+                    warn!("Should send matching Reset message");
                     continue;
                 }
             };
+
             println!("{:?}", message);
             println!("{}", message);
             let req = Request::from_message(addr, message).unwrap();
             println!("{:?}", req);
+            let ack = MessageBuilder::empty()
+                .acknowledgement()
+                .message_id(req.message_id())
+                .build();
+            try_ready!(self
+                .socket
+                .poll_send_to(&ack.as_bytes()?, &addr)
+                .map_err(ErrorKind::ServerIo));
+            let res = MessageBuilder::response()
+                .message_id(req.message_id())
+                .token(req.token().clone())
+                .build();
             let tx = self.tx.clone();
             tokio::spawn(
                 tx.send(Carry::Piggyback(Response::from_request(&req)))
                     .map(|_| ())
                     .map_err(|_| ()),
             );
-            // let response_handler = self
-            //     .handler
-            //     .handle(request)
-            //     .map_err(|err| {
-            //         warn!("Request handler error: {:?}", err);
-            //         ()
-            //     })
-            //     .and_then(move |res| match res {
-            //         Some(res) => match res.message.to_bytes() {
-            //             Ok(bytes) => Either::A(
-            //                 tx.send(Response(addr, bytes))
-            //                     .map(|_| ())
-            //                     .map_err(|_| panic!("boom")),
-            //             ),
-            //             Err(err) => {
-            //                 warn!("Invalid response {:?}", err);
-            //                 Either::B(future::ok(()))
-            //             }
-            //         },
-            //         None => {
-            //             debug!("No response");
-            //             Either::B(future::ok(()))
-            //         }
-            //     });
-            // tokio::spawn(response_handler);
         }
     }
 }

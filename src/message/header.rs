@@ -14,6 +14,16 @@ pub struct Header {
 }
 
 impl Header {
+    pub fn new(message_type: MessageType, tkl: usize, code: RawCode, message_id: u16) -> Self {
+        Self {
+            version: VERSION,
+            mtype: message_type,
+            tkl,
+            code,
+            message_id,
+        }
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let version = bytes[0] >> 6;
         if version != VERSION {
@@ -58,7 +68,7 @@ impl fmt::Display for Header {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Copy, Debug, Clone, PartialEq, Eq)]
 pub enum MessageType {
     Confirmable,
     NonConfirmable,
