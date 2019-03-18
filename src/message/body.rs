@@ -60,7 +60,7 @@ impl Body {
 
             let length = length as usize;
             let val_i = i + offset;
-            let value = if val_i + length < bytes.len() {
+            let value = if val_i + length <= bytes.len() {
                 &bytes[val_i..val_i + length]
             } else {
                 return Err(FormatError::OptionLengthMismatch {
@@ -97,14 +97,13 @@ impl Body {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let payload = match self.payload {
-            Some(ref pl) => pl.as_slice(),
-            None => &[],
-        };
-        let size = self.token.len() + payload.len();
+        let size = self.token.len() + self.payload.as_ref().map_or(0, |pl| pl.len() + 1);
         let mut buf = Vec::with_capacity(size);
         buf.extend(self.token.to_bytes().iter());
-        buf.extend(payload.iter());
+        if let Some(ref pl) = self.payload {
+            buf.push(PAYLOAD_MARKER);
+            buf.extend(pl.iter());
+        }
         buf
     }
 }

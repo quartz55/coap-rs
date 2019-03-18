@@ -57,6 +57,7 @@ pub trait Opt: Sized {
     fn from_bytes(bytes: &[u8]) -> Result<Self>;
     fn to_bytes(&self) -> Cow<[u8]>;
     fn len(&self) -> usize;
+    fn val(&self) -> &Self::Format;
 
     #[inline(always)]
     fn class() -> Class {
@@ -119,6 +120,10 @@ macro_rules! option {
             fn len(&self) -> usize {
                 let $value = &self.0;
                 $len
+            }
+
+            fn val(&self) -> &$format {
+                &self.0
             }
         }
         impl From<$format> for $name {

@@ -3,8 +3,9 @@ use super::code::{Method, RawCode, ResponseCode};
 use super::error::{Error, FormatError, Result};
 use super::header::Header;
 use super::header::MessageType;
+use super::option::{self as opt, Opt};
 use crate::params::HEADER_SIZE;
-use std::fmt;
+use std::fmt::{self, Write};
 
 #[derive(Debug, Clone)]
 pub enum MessageKind {
@@ -120,6 +121,13 @@ impl fmt::Display for Message {
                 write!(f, "Token: {}", body.token)?;
                 if let Some(ref pl) = body.payload {
                     write!(f, "\nPayload: {} bytes", pl.len())?;
+                }
+                if let Some(ref uri_path) = body.options.get::<opt::UriPath>() {
+                    let mut path = String::new();
+                    uri_path
+                        .iter()
+                        .for_each(|frag| write!(&mut path, "/{}", frag.val()).unwrap());
+                    write!(f, "\nURI-PATH: {}", path)?;
                 }
                 Ok(())
             }
