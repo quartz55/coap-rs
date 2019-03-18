@@ -71,6 +71,12 @@ impl From<MessageError> for ErrorKind {
     }
 }
 
+impl From<std::io::Error> for ErrorKind {
+    fn from(err: std::io::Error) -> Self {
+        ErrorKind::ServerIo(err)
+    }
+}
+
 pub fn pprint_error(err: &dyn StdError) -> String {
     let mut s = String::new();
     let mut err = err;
