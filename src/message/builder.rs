@@ -214,8 +214,11 @@ where
     MID: IsSet,
     MTYPE: IsSet,
 {
-    pub fn response_code(mut self, res_code: ResponseCode) -> Self {
-        self.code = res_code.as_raw_code();
+    pub fn response_code<R>(mut self, res_code: R) -> Self
+    where
+        R: Into<ResponseCode>,
+    {
+        self.code = res_code.into().as_raw_code();
         self
     }
 }
