@@ -1,4 +1,4 @@
-pub use crate::message::error::Error as MessageError;
+pub use crate::message::error::MessageError;
 use std::error::Error as StdError;
 use std::fmt::{self, Write};
 use std::result::Result as StdResult;
@@ -11,6 +11,18 @@ pub struct Error(ErrorKind);
 impl Error {
     pub fn kind(&self) -> &ErrorKind {
         &self.0
+    }
+
+    pub fn message(err: MessageError) -> Self {
+        err.into()
+    }
+
+    pub fn server_io(err: std::io::Error) -> Self {
+        err.into()
+    }
+
+    pub fn addr_unavailable() -> Self {
+        Self(ErrorKind::AddrUnavailable)
     }
 }
 
@@ -30,6 +42,7 @@ impl StdError for Error {
 pub enum ErrorKind {
     Message(MessageError),
     ServerIo(std::io::Error),
+    AddrUnavailable,
     #[doc(hidden)]
     __NonExhaustive,
 }
@@ -51,6 +64,7 @@ impl fmt::Display for ErrorKind {
         match *self {
             ErrorKind::Message(_) => write!(f, "message error"),
             ErrorKind::ServerIo(_) => write!(f, "server io error"),
+            ErrorKind::AddrUnavailable => write!(f, "address unavailable"),
             ErrorKind::__NonExhaustive => unreachable!("invalid error"),
         }
     }

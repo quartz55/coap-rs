@@ -1,4 +1,6 @@
-pub mod codec;
+mod codec;
+mod socket;
+
 pub mod error;
 pub mod message;
 pub mod params;

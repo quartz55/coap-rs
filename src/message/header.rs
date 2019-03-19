@@ -4,7 +4,7 @@ use crate::params::VERSION;
 use byteorder::{ByteOrder, BE};
 use std::fmt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
     pub version: u8,
     pub mtype: MessageType,

@@ -1,6 +1,6 @@
 use super::body::Body;
 use super::code::{Method, RawCode, ResponseCode};
-use super::error::{Error, FormatError, Result};
+use super::error::{ErrorKind, FormatError, Result};
 use super::header::Header;
 use super::header::MessageType;
 use super::option::{self as opt, Opt};
@@ -37,7 +37,7 @@ impl Message {
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < HEADER_SIZE {
-            return Err(Error::PacketTooSmall(bytes.len()));
+            return Err(ErrorKind::PacketTooSmall(bytes.len()))?;
         }
 
         // Parse header
@@ -47,13 +47,17 @@ impl Message {
         // Handle Empty message special case (code 0.00)
         if header.code == RawCode(0, 00) {
             if header.tkl != 0 {
-                return Err(FormatError::InvalidEmptyCode(
-                    "token length MUST be 0".into(),
+                return Err((
+                    FormatError::InvalidEmptyCode("token length MUST be 0".into()),
+                    header,
                 ))?;
             }
             if bytes.len() != 0 {
-                return Err(FormatError::InvalidEmptyCode(
-                    "bytes MUST NOT be present after message ID".into(),
+                return Err((
+                    FormatError::InvalidEmptyCode(
+                        "bytes MUST NOT be present after message ID".into(),
+                    ),
+                    header,
                 ))?;
             }
             return Ok(Self {
@@ -62,7 +66,8 @@ impl Message {
             });
         }
 
-        let body = Body::from_bytes(&header, bytes)?;
+        let body =
+            Body::from_bytes(&header, bytes).map_err(|err| err.set_header(header.clone()))?;
 
         let kind = match header.code.class() {
             0 => MessageKind::Request(body),

@@ -1,10 +1,12 @@
+use super::header::Header;
 use crate::params::VERSION;
 use std::error::Error as StdError;
 use std::fmt;
+use std::ops::Deref;
 use std::ops::Range;
 use std::result::Result as StdResult;
 
-pub type Result<T> = StdResult<T, Error>;
+pub type Result<T> = StdResult<T, MessageError>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatError {
@@ -57,33 +59,107 @@ impl fmt::Display for FormatError {
 impl StdError for FormatError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Error {
+pub enum ErrorKind {
     MessageFormat(FormatError),
     PacketTooSmall(usize),
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::MessageFormat(_) => write!(f, "invalid message format"),
-            Error::PacketTooSmall(s) => {
+            ErrorKind::MessageFormat(_) => write!(f, "invalid message format"),
+            ErrorKind::PacketTooSmall(s) => {
                 write!(f, "invalid CoAP packet size {} (minimum 4 bytes)", s)
             }
         }
     }
 }
 
-impl StdError for Error {
+impl StdError for ErrorKind {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match *self {
-            Error::MessageFormat(ref err) => Some(err),
+            ErrorKind::MessageFormat(ref err) => Some(err),
             _ => None,
         }
     }
 }
 
-impl From<FormatError> for Error {
-    fn from(e: FormatError) -> Error {
-        Error::MessageFormat(e)
+impl From<FormatError> for ErrorKind {
+    fn from(e: FormatError) -> Self {
+        ErrorKind::MessageFormat(e)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessageError {
+    kind: ErrorKind,
+    header: Option<Header>,
+}
+
+impl MessageError {
+    pub fn new(kind: ErrorKind) -> Self {
+        Self { kind, header: None }
+    }
+
+    pub fn with_header(kind: ErrorKind, header: Header) -> Self {
+        Self {
+            kind,
+            header: Some(header),
+        }
+    }
+
+    pub fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
+
+    pub fn header(&self) -> Option<&Header> {
+        self.header.as_ref()
+    }
+
+    pub fn set_header(mut self, header: Header) -> Self {
+        self.header = Some(header);
+        self
+    }
+
+    pub fn take_header(&mut self) -> Option<Header> {
+        self.header.take()
+    }
+}
+
+impl Deref for MessageError {
+    type Target = ErrorKind;
+
+    fn deref(&self) -> &Self::Target {
+        &self.kind
+    }
+}
+
+impl fmt::Display for MessageError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.kind.fmt(f)
+    }
+}
+
+impl StdError for MessageError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.kind.source()
+    }
+}
+
+impl<K> From<K> for MessageError
+where
+    K: Into<ErrorKind>,
+{
+    fn from(kind: K) -> Self {
+        Self::new(kind.into())
+    }
+}
+
+impl<K> From<(K, Header)> for MessageError
+where
+    K: Into<ErrorKind>,
+{
+    fn from((kind, header): (K, Header)) -> Self {
+        Self::with_header(kind.into(), header)
     }
 }
