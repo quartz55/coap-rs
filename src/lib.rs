@@ -1,4 +1,5 @@
 mod codec;
+mod exchange;
 mod socket;
 
 pub mod error;

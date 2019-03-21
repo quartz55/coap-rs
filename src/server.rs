@@ -1,11 +1,12 @@
 use crate::codec::Incoming;
 use crate::error::{self, Error as CoapError, Result as CoapResult};
+use crate::exchange::{Exchange, ToSend};
 use crate::message::{code::SuccessCode, Message, MessageBuilder, MessageKind};
 use crate::request::Request;
 use crate::socket::CoapSocket;
 use futures::try_ready;
 use log::{debug, error, info, warn};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use tokio::prelude::*;
 use tokio::sync::mpsc;
@@ -30,14 +31,12 @@ impl MidGen {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ToSend(Message, SocketAddr);
-
 pub struct Server {
     socket: CoapSocket,
     rx: mpsc::Receiver<ToSend>,
     tx: mpsc::Sender<ToSend>,
     mid: MidGen,
+    exchangres: VecDeque<Exchange>
 }
 
 impl Server {
@@ -88,20 +87,7 @@ impl Future for Server {
             match msg.kind {
                 MessageKind::Request(_) => {
                     let req = Request::from_message(src, msg).unwrap();
-                    let ack = MessageBuilder::empty()
-                        .acknowledgement()
-                        .message_id(req.message_id())
-                        .build();
-                    println!("ack:\n{}", ack);
-                    self.socket.send(ack, *req.source());
-                    let res = MessageBuilder::response()
-                        .confirmable()
-                        .message_id(self.mid.next(src))
-                        .token(req.token().clone())
-                        .response_code(SuccessCode::Valid)
-                        .build();
-                    println!("res:\n{}", res);
-                    self.socket.send(res, *req.source());
+                    let exch = 
                 }
                 MessageKind::Empty => {}
                 MessageKind::Response(_) => {

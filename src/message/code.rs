@@ -67,7 +67,7 @@ impl From<(u8, u8)> for RawCode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Method {
     Get,
     Post,
