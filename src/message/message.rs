@@ -17,20 +17,38 @@ pub enum MessageKind {
 
 #[derive(Debug, Clone)]
 pub struct Message {
-    pub header: Header,
-    pub kind: MessageKind,
+    header: Header,
+    kind: MessageKind,
 }
 
 impl Message {
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    pub fn kind(&self) -> &MessageKind {
+        &self.kind
+    }
+
+    pub fn body(&self) -> Option<&Body> {
+        use MessageKind::*;
+        match &self.kind {
+            Empty => None,
+            Request(b) | Response(b) | Reserved(b) => Some(b),
+        }
+    }
+
+    pub fn consume(self) -> (Header, MessageKind) {
+        (self.header, self.kind)
+    }
+
+    pub fn new(header: Header, kind: MessageKind) -> Self {
+        Self { header, kind }
+    }
+
     pub fn empty(message_type: MessageType, message_id: u16) -> Self {
         Self {
-            header: Header {
-                version: 1,
-                mtype: message_type,
-                tkl: 0,
-                code: RawCode(0, 00),
-                message_id,
-            },
+            header: Header::new(message_type, 0, RawCode(0, 00), message_id),
             kind: MessageKind::Empty,
         }
     }
@@ -45,8 +63,8 @@ impl Message {
         let header = Header::from_bytes(header)?;
 
         // Handle Empty message special case (code 0.00)
-        if header.code == RawCode(0, 00) {
-            if header.tkl != 0 {
+        if header.code() == RawCode(0, 00) {
+            if header.tkl() != 0 {
                 return Err((
                     FormatError::InvalidEmptyCode("token length MUST be 0".into()),
                     header,
@@ -69,7 +87,7 @@ impl Message {
         let body =
             Body::from_bytes(&header, bytes).map_err(|err| err.set_header(header.clone()))?;
 
-        let kind = match header.code.class() {
+        let kind = match header.code().class() {
             0 => MessageKind::Request(body),
             2..=5 => MessageKind::Response(body),
             _ => MessageKind::Reserved(body),
@@ -91,6 +109,48 @@ impl Message {
             }
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        match &self.kind {
+            MessageKind::Empty => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_request(&self) -> bool {
+        match &self.kind {
+            MessageKind::Request(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_response(&self) -> bool {
+        match &self.kind {
+            MessageKind::Response(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_reserved(&self) -> bool {
+        match &self.kind {
+            MessageKind::Reserved(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_reset(&self) -> bool {
+        match (self.kind(), self.header().message_type()) {
+            (MessageKind::Empty, MessageType::Reset) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_ping(&self) -> bool {
+        match (self.kind(), self.header().message_type()) {
+            (MessageKind::Empty, MessageType::Confirmable) => true,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Message {
@@ -110,15 +170,17 @@ impl fmt::Display for Message {
                 let (kind, code) = match kind {
                     MessageKind::Request(_) => (
                         "REQUEST",
-                        Method::from_raw_code(self.header.code).unwrap().to_string(),
-                    ),
-                    MessageKind::Response(_) => (
-                        "RESPONSE",
-                        ResponseCode::from_raw_code(self.header.code)
+                        Method::from_raw_code(self.header.code())
                             .unwrap()
                             .to_string(),
                     ),
-                    MessageKind::Reserved(_) => ("RESERVED", self.header.code.to_string()),
+                    MessageKind::Response(_) => (
+                        "RESPONSE",
+                        ResponseCode::from_raw_code(self.header.code())
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    MessageKind::Reserved(_) => ("RESERVED", self.header.code().to_string()),
                     _ => unreachable!(),
                 };
                 write!(f, "-------- {} --------\n", kind)?;

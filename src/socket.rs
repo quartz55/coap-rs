@@ -1,4 +1,4 @@
-use crate::codec::{CoapCodec, Incoming};
+use crate::codec::{CoapCodec, ParsedMsg};
 use crate::error::{Error as CoapError, Result as CoapResult};
 use crate::message::Message;
 use futures::sink::SendAll;
@@ -43,6 +43,7 @@ impl CoapSocket {
 
     pub fn send(&mut self, msg: Message, dest: SocketAddr) {
         self.outgoing.push((msg, dest));
+        task::current().notify();
     }
 
     pub fn poll(&mut self) -> Poll<(), CoapError> {
@@ -59,7 +60,7 @@ impl CoapSocket {
             }
             if self.outgoing.len() > 0 {
                 let out = self.outgoing.drain(..).collect::<Vec<_>>();
-                println!("sending {:?}", out);
+                // println!("sending {:?}", out);
                 let sock = self.sock_out.take().expect("unreachable");
                 self.sending = Some(sock.send_all(iter_ok(out)));
             } else {
@@ -68,7 +69,7 @@ impl CoapSocket {
         }
     }
 
-    pub fn poll_recv(&mut self) -> Poll<(Incoming, SocketAddr), CoapError> {
+    pub fn poll_recv(&mut self) -> Poll<(ParsedMsg, SocketAddr), CoapError> {
         match self.sock_in.poll()? {
             Async::Ready(Some(inc)) => Ok(Async::Ready(inc)),
             Async::Ready(None) => panic!("what"),

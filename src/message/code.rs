@@ -25,11 +25,11 @@ impl std::error::Error for Error {}
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct RawCode(pub u8, pub u8);
 impl RawCode {
-    #[inline(always)]
+    #[inline]
     pub fn class(&self) -> u8 {
         self.0
     }
-    #[inline(always)]
+    #[inline]
     pub fn detail(&self) -> u8 {
         self.1
     }
@@ -46,22 +46,25 @@ impl fmt::Display for RawCode {
 }
 
 impl RawCode {
+    #[inline]
     pub fn from_u8(raw: u8) -> Self {
         Self(code_class(raw), code_detail(raw))
     }
-    #[inline(always)]
+    #[inline]
     pub fn as_u8(&self) -> u8 {
         (self.0 << 5) | self.1
     }
 }
 
 impl From<u8> for RawCode {
+    #[inline]
     fn from(raw: u8) -> Self {
         Self::from_u8(raw)
     }
 }
 
 impl From<(u8, u8)> for RawCode {
+    #[inline]
     fn from((class, detail): (u8, u8)) -> Self {
         Self(class, detail)
     }
@@ -305,12 +308,12 @@ impl From<ServerErrorCode> for ResponseCode {
     }
 }
 
-#[inline(always)]
+#[inline]
 fn code_class(raw: u8) -> u8 {
     raw >> 5
 }
 
-#[inline(always)]
+#[inline]
 fn code_detail(raw: u8) -> u8 {
     raw & 0x1F
 }

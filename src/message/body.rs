@@ -23,13 +23,13 @@ impl Body {
 
     pub fn from_bytes(header: &Header, bytes: &[u8]) -> Result<Self> {
         // Parse token
-        if bytes.len() < header.tkl {
+        if bytes.len() < header.tkl() {
             return Err(FormatError::TokenLengthMismatch {
                 actual: bytes.len(),
-                expected: header.tkl,
+                expected: header.tkl(),
             })?;
         }
-        let (token, bytes) = bytes.split_at(header.tkl);
+        let (token, bytes) = bytes.split_at(header.tkl());
         let token = Token::new(token);
 
         // Parse options

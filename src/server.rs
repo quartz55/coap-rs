@@ -1,18 +1,29 @@
-use crate::codec::Incoming;
-use crate::error::{self, Error as CoapError, Result as CoapResult};
-use crate::exchange::{Exchange, ToSend};
+use crate::codec::ParsedMsg;
+use crate::error::{self, Error as CoapError, ErrorKind, Result as CoapResult};
+use crate::exchange::{Exchange, Key, ToSend};
 use crate::message::{code::SuccessCode, Message, MessageBuilder, MessageKind};
+use crate::reliability::Reliablity;
 use crate::request::Request;
+use crate::response::{Carry, Response};
 use crate::socket::CoapSocket;
 use futures::try_ready;
 use log::{debug, error, info, warn};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use tokio::prelude::*;
 use tokio::sync::mpsc;
 
+fn default_handler(req: Request, mut res: Response) -> impl Future<Item = Carry, Error = ()> {
+    res.set_payload(String::from("shitface"));
+    futures::future::ok(res.into())
+    // futures::future::ok(Carry::Seperate(
+    //     Box::new(futures::future::ok(res)),
+    //     Reliablity::NonConfirmable,
+    // ))
+}
+
 #[derive(Debug, Clone)]
-struct MidGen(HashMap<IpAddr, u16>);
+pub struct MidGen(HashMap<IpAddr, u16>);
 impl Default for MidGen {
     fn default() -> Self {
         Self(HashMap::new())
@@ -36,7 +47,8 @@ pub struct Server {
     rx: mpsc::Receiver<ToSend>,
     tx: mpsc::Sender<ToSend>,
     mid: MidGen,
-    exchangres: VecDeque<Exchange>
+    exchanges: HashMap<Key, Exchange>,
+    confirmables: HashMap<Key, Key>,
 }
 
 impl Server {
@@ -48,7 +60,121 @@ impl Server {
             rx,
             tx,
             mid: MidGen::new(),
+            exchanges: HashMap::new(),
+            confirmables: HashMap::new(),
         });
+    }
+
+    fn poll_exchanges(&mut self) -> Poll<(), CoapError> {
+        let mut done = vec![];
+        for (_, e) in self.exchanges.iter_mut() {
+            let is_done = match e.poll(&mut self.mid) {
+                Ok(Async::Ready(_)) => true,
+                Ok(Async::NotReady) => false,
+                Err(err) => {
+                    match err.kind() {
+                        ErrorKind::RequestCancelled => warn!("Request cancelled"),
+                        ErrorKind::ResponseTimeout => warn!("Response timeout"),
+                        _ => return Err(err),
+                    };
+                    true
+                }
+            };
+            if is_done {
+                done.push(e.key());
+            }
+        }
+        done.iter().for_each(|k| {
+            self.exchanges.remove(k);
+        });
+        Ok(Async::NotReady)
+    }
+
+    fn poll_outgoing(&mut self) -> Poll<(), CoapError> {
+        loop {
+            match self
+                .rx
+                .poll()
+                .map_err(|_| CoapError::broken_channel("server rx"))?
+            {
+                Async::Ready(None) => panic!("boom"),
+                Async::Ready(Some(ToSend(msg, addr))) => {
+                    info!("Outgoing message\n{}", msg);
+                    info!(
+                        "[{}]",
+                        msg.as_bytes()
+                            .unwrap()
+                            .iter()
+                            .fold(String::new(), |acc, b| acc + &format!("{:#X}, ", b))
+                    );
+                    self.socket.send(msg, addr);
+                    continue;
+                }
+                Async::NotReady => break,
+            };
+        }
+        self.socket.poll()
+    }
+
+    fn poll_incoming(&mut self) -> Poll<(), CoapError> {
+        loop {
+            let (inc, src) = try_ready!(self.socket.poll_recv());
+            let msg = match inc {
+                ParsedMsg::Valid(msg) => msg,
+                ParsedMsg::Reject(header, err) => {
+                    warn!(
+                        "Rejecting CoAP message with invalid format: {}",
+                        error::pprint_error(&err)
+                    );
+                    let rst = MessageBuilder::reset(header.message_id()).build();
+                    self.socket.send(rst, src);
+                    continue;
+                }
+                ParsedMsg::Invalid(err) => {
+                    warn!(
+                        "Silently ignoring invalid CoAP message: {}",
+                        error::pprint_error(&err)
+                    );
+                    continue;
+                }
+            };
+
+            debug!("Incoming message\n{0:?}\n{0}", msg);
+
+            if msg.is_reserved() {
+                warn!("Silently ignoring message using reserved code:\n{}", msg);
+                continue;
+            }
+
+            let key = Key::new(src, msg.header().message_id());
+            match (msg.kind(), self.exchanges.get_mut(&key)) {
+                (MessageKind::Request(_), None) => {
+                    let req = Request::from_message(src, msg).unwrap();
+                    let mut exch = Exchange::new(&req, self.tx.clone());
+                    let handle = exch.take_handle();
+                    let res = Response::from_request(&req);
+                    tokio::spawn(default_handler(req, res).map(
+                        move |res| match handle.send(res) {
+                            _ => (),
+                        },
+                    ));
+                    // Trigger wakeup (if needed)
+                    task::current().notify();
+                    self.exchanges.insert(exch.key(), exch);
+                }
+                (MessageKind::Request(_), Some(_)) => {
+                    warn!("Ignoring request for existing exchange:\n{}", msg);
+                }
+                (_, Some(exch)) => exch.handle(msg),
+                _ => {
+                    warn!("Rejecting message due to lack of context:\n{}", msg);
+                    let rst = MessageBuilder::reset(msg.header().message_id()).build();
+                    self.tx
+                        .try_send(ToSend(rst, src))
+                        .map_err(|_| CoapError::broken_channel("server socket"))?;
+                }
+            }
+        }
     }
 }
 
@@ -58,45 +184,11 @@ impl Future for Server {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            self.socket.poll().unwrap();
+            self.poll_exchanges()?;
 
-            let (inc, src) = try_ready!(self.socket.poll_recv());
-            let msg = match inc {
-                Incoming::Valid(msg) => msg,
-                Incoming::Reject(header, err) => {
-                    warn!(
-                        "Rejecting CoAP message with invalid format: {}",
-                        error::pprint_error(&err)
-                    );
-                    let rst = MessageBuilder::reset(header.message_id).build();
-                    self.socket.send(rst, src);
-                    continue;
-                }
-                Incoming::Invalid(err) => {
-                    warn!(
-                        "Silently ignoring invalid CoAP message: {}",
-                        error::pprint_error(&err)
-                    );
-                    continue;
-                }
-            };
+            self.poll_outgoing()?;
 
-            println!("{:?}", msg);
-            println!("{}", msg);
-
-            match msg.kind {
-                MessageKind::Request(_) => {
-                    let req = Request::from_message(src, msg).unwrap();
-                    let exch = 
-                }
-                MessageKind::Empty => {}
-                MessageKind::Response(_) => {
-                    error!("response what?\n{}", msg);
-                }
-                MessageKind::Reserved(_) => {
-                    warn!("Silently ignoring message using reserved code:\n{}", msg);
-                }
-            }
+            try_ready!(self.poll_incoming());
         }
     }
 }

@@ -6,8 +6,8 @@ pub mod header;
 pub mod option;
 pub mod token;
 
-mod builder;
-mod message;
+pub(crate) mod builder;
+pub(crate) mod message;
 
 pub use body::Body;
 pub use builder::MessageBuilder;

@@ -6,11 +6,11 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
-    pub version: u8,
-    pub mtype: MessageType,
-    pub tkl: usize,
-    pub code: RawCode,
-    pub message_id: u16,
+    version: u8,
+    mtype: MessageType,
+    tkl: usize,
+    code: RawCode,
+    message_id: u16,
 }
 
 impl Header {
@@ -55,6 +55,22 @@ impl Header {
         buf[1] = self.code.as_u8();
         BE::write_u16(&mut buf[2..], self.message_id);
         Ok(buf)
+    }
+
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+    pub fn message_type(&self) -> MessageType {
+        self.mtype
+    }
+    pub fn tkl(&self) -> usize {
+        self.tkl
+    }
+    pub fn code(&self) -> RawCode {
+        self.code
+    }
+    pub fn message_id(&self) -> u16 {
+        self.message_id
     }
 }
 

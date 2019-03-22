@@ -38,6 +38,10 @@ pub trait Acknowledgeable {}
 impl Acknowledgeable for Response {}
 impl Acknowledgeable for Empty {}
 
+pub type EmptyBuilder<MID, MTYPE> = MessageBuilder<Empty, MID, MTYPE>;
+pub type ResponseBuilder<MID, MTYPE> = MessageBuilder<Response, MID, MTYPE>;
+pub type RequestBuilder<MID, MTYPE> = MessageBuilder<Request, MID, MTYPE>;
+
 #[derive(Debug, Clone)]
 pub struct MessageBuilder<KIND = Empty, MID = No, MTYPE = No>
 where
@@ -245,19 +249,13 @@ where
 impl MessageBuilder<Request, Yes, Yes> {
     pub fn build(self) -> Message {
         let (header, body) = self.make_header_body();
-        Message {
-            header,
-            kind: MessageKind::Request(body),
-        }
+        Message::new(header, MessageKind::Request(body))
     }
 }
 
 impl MessageBuilder<Response, Yes, Yes> {
     pub fn build(self) -> Message {
         let (header, body) = self.make_header_body();
-        Message {
-            header,
-            kind: MessageKind::Response(body),
-        }
+        Message::new(header, MessageKind::Response(body))
     }
 }

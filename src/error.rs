@@ -24,6 +24,25 @@ impl Error {
     pub fn addr_unavailable() -> Self {
         Self(ErrorKind::AddrUnavailable)
     }
+
+    pub fn response_timeout() -> Self {
+        Self(ErrorKind::ResponseTimeout)
+    }
+
+    pub fn handler() -> Self {
+        Self(ErrorKind::Handler)
+    }
+
+    pub fn request_cancelled() -> Self {
+        Self(ErrorKind::RequestCancelled)
+    }
+
+    pub fn broken_channel<S>(reason: S) -> Self
+    where
+        S: Into<String>,
+    {
+        Self(ErrorKind::BrokenChannel(reason.into()))
+    }
 }
 
 impl fmt::Display for Error {
@@ -42,7 +61,11 @@ impl StdError for Error {
 pub enum ErrorKind {
     Message(MessageError),
     ServerIo(std::io::Error),
+    BrokenChannel(String),
     AddrUnavailable,
+    ResponseTimeout,
+    Handler,
+    RequestCancelled,
     #[doc(hidden)]
     __NonExhaustive,
 }
@@ -64,7 +87,11 @@ impl fmt::Display for ErrorKind {
         match *self {
             ErrorKind::Message(_) => write!(f, "message error"),
             ErrorKind::ServerIo(_) => write!(f, "server io error"),
+            ErrorKind::BrokenChannel(ref reason) => write!(f, "broken channel: {}", reason),
             ErrorKind::AddrUnavailable => write!(f, "address unavailable"),
+            ErrorKind::ResponseTimeout => write!(f, "response timeout"),
+            ErrorKind::Handler => write!(f, "response handler failed"),
+            ErrorKind::RequestCancelled => write!(f, "request cancelled by client"),
             ErrorKind::__NonExhaustive => unreachable!("invalid error"),
         }
     }
