@@ -1,8 +1,8 @@
-use super::server::MidGen;
 use crate::error::Error as CoapError;
 use crate::message::code::Method;
 use crate::message::token::Token;
 use crate::message::{Message, MessageBuilder};
+use crate::midgen::MidGen;
 use crate::params::{ACK_RANDOM_FACTOR, ACK_TIMEOUT, MAX_RETRANSMIT};
 use crate::reliability::Reliablity;
 use crate::request::Request;

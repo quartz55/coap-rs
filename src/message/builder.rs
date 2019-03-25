@@ -196,8 +196,11 @@ where
         self
     }
 
-    pub fn payload(mut self, payload: Vec<u8>) -> Self {
-        self.payload = Some(payload);
+    pub fn payload<P>(mut self, payload: P) -> Self
+    where
+        P: Into<Vec<u8>>,
+    {
+        self.payload = Some(payload.into());
         self
     }
 }

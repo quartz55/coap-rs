@@ -1,5 +1,9 @@
+#[macro_use]
+extern crate log;
+
 mod codec;
 mod exchange;
+mod midgen;
 mod socket;
 
 pub mod error;

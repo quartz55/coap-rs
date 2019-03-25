@@ -3,6 +3,7 @@ use crate::message::error::{ErrorKind, FormatError};
 use crate::message::{Header, Message};
 use bytes::{BufMut, BytesMut};
 
+#[derive(Debug, Clone)]
 pub enum ParsedMsg {
     Valid(Message),
     Reject(Header, FormatError),

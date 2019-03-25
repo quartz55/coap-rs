@@ -2,6 +2,7 @@ use crate::codec::ParsedMsg;
 use crate::error::{self, Error as CoapError, ErrorKind, Result as CoapResult};
 use crate::exchange::{Exchange, Key, ToSend};
 use crate::message::{code::SuccessCode, Message, MessageBuilder, MessageKind};
+use crate::midgen::MidGen;
 use crate::reliability::Reliablity;
 use crate::request::Request;
 use crate::response::{Carry, Response};
@@ -22,33 +23,12 @@ fn default_handler(req: Request, mut res: Response) -> impl Future<Item = Carry,
     // ))
 }
 
-#[derive(Debug, Clone)]
-pub struct MidGen(HashMap<IpAddr, u16>);
-impl Default for MidGen {
-    fn default() -> Self {
-        Self(HashMap::new())
-    }
-}
-impl MidGen {
-    pub fn new() -> Self {
-        Default::default()
-    }
-    pub fn next(&mut self, source: SocketAddr) -> u16 {
-        *self
-            .0
-            .entry(source.ip())
-            .and_modify(|e| *e += 1)
-            .or_insert(0)
-    }
-}
-
 pub struct Server {
     socket: CoapSocket,
     rx: mpsc::Receiver<ToSend>,
     tx: mpsc::Sender<ToSend>,
     mid: MidGen,
     exchanges: HashMap<Key, Exchange>,
-    confirmables: HashMap<Key, Key>,
 }
 
 impl Server {
@@ -61,7 +41,6 @@ impl Server {
             tx,
             mid: MidGen::new(),
             exchanges: HashMap::new(),
-            confirmables: HashMap::new(),
         });
     }
 
